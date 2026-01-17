@@ -145,6 +145,7 @@ bool doesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY)
                 if (nPosY + py >= 0 && nPosY + py < nFieldHeight)
                     if (tetromino[nTetromino][pieceIndex] == L'X' && pField[fieldIndex] != 0)                           
                         return false;
+
             
             // COLLISION DETECTION ===========================================================
         }
