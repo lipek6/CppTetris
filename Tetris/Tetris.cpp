@@ -1,12 +1,17 @@
 //TODO: CHECK IF THE WAY WE LOOP (INTERNAL Y AND EXTERNAL X) IS UNOPTIMIZED BECAUSE OF SPATIAL LOCALITY ON THE CPU CACHE.
 #include <Windows.h>
 #include <iostream>
+#include <thread>
+#include <chrono>
 #include <string>
+
 
 #define BORDER 9
 #define EMPTY  0
 #define OFFSET 2
 #define MAX_TETROMINO_SPACE 4
+#define NUM_INPUT_KEYS 4
+#define MOVE_VEL 1
 
 const int nFieldWidth   = 12;
 const int nFieldHeight  = 18;
@@ -16,9 +21,10 @@ unsigned char* pField = nullptr;        // Dynamically allocated array of size n
 
 std::wstring tetromino[7];
 
+
 void createAssets();
 void createField();
-int rotate(int px, int py, int r);
+int  rotate(int px, int py, int r);
 bool doesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY);
 
 
@@ -26,43 +32,110 @@ bool doesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY);
 
 int main()
 {
+    // GAME ASSETS INITIALIZATION ===========================================================
     createAssets();
     createField();
 
-    // Window Initialization
+
+
+    // WINDOW INITIALIZATION ================================================================
     wchar_t* screen = new wchar_t[nScreenWidth * nScreenHeight];
     for (int i = 0; i < nScreenWidth * nScreenHeight; i++) screen[i] = L' ';
     HANDLE hConsole = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
     SetConsoleActiveScreenBuffer(hConsole);
     DWORD dwBytesWritten = 0;
 
-    // Game loop
-    bool bGameOver = false;
 
+
+    // GAME LOGIC DATA ======================================================================
+    bool bGameOver            = false;              // Playable state
+    bool bKey[NUM_INPUT_KEYS] = {false};            // Keys used to play the game
+    bool bRotateHold          = false;              // Is the user holding down 'Z'?
+    bool bForceDown           = false;              // Is nSpeedCounter == nSpeed ?
+
+    int nCurrentPiece    = 0;                       // Line by default
+    int nCurrentRotation = 0;                       // 0° degrees rotation
+    int nCurrentX        = nFieldWidth / 2;         // Middle of the field
+    int nCurrentY        = 0;                       // Top of the field
+    int nSpeed           = 20;                      // Game speed difficulty
+    int nSpeedCounter    = 0;                       // If it reaches nSpeed, piece go down
+
+    // GAME LOOP ============================================================================
     while (!bGameOver)
     {
         // GAME TIMING ======================================================================
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        nSpeedCounter++;
+        bForceDown = (nSpeedCounter == nSpeed);
+
+
 
         // INPUT ============================================================================
+        for (int k = 0; k < NUM_INPUT_KEYS; k++)
+            bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)("\x27\x25\x28Z"[k]))) != 0;
+                                                                //RightLeftDownZ
 
-        // GAME LOGIC =======================================================================
+
+        // GAME LOGIC =======================================================================       
+        // Right Key 
+        nCurrentX += (bKey[0] && doesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX + MOVE_VEL, nCurrentY)) ? MOVE_VEL : 0;
+
+        // Left Key 
+        nCurrentX -= (bKey[1] && doesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX - MOVE_VEL, nCurrentY)) ? MOVE_VEL : 0;
+
+        // Down Key
+        nCurrentY += (bKey[2] && doesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY + MOVE_VEL)) ? MOVE_VEL : 0;
+
+        // Z Key (rotate)
+        if (bKey[3])
+        {
+            nCurrentRotation += (!bRotateHold && doesPieceFit(nCurrentPiece, nCurrentRotation + 1, nCurrentX, nCurrentY)) ? 1 : 0;
+            bRotateHold = true;
+        }
+        else
+            bRotateHold = false;
+
+        // Make piece fall if timer says so
+        if (bForceDown)
+        {
+            nSpeedCounter = 0;
+            bForceDown    = false;
+
+
+            if (doesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY + MOVE_VEL))
+                nCurrentY += MOVE_VEL;
+            else
+            {
+                // Make Piece stuck on the ground and generate another piece
+                for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
+                    for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
+                        if (tetromino[nCurrentPiece][rotate(px, py, nCurrentRotation)] == L'X')
+                            screen[(nCurrentY + py + OFFSET) * nScreenWidth + (nCurrentX + px + OFFSET)] = L"ABCDEFG"[nCurrentPiece];
+                    
+                rotate(nCurrentX, nCurrentY, nCurrentRotation);
+            }
+
+        }
+
+
 
         // RENDER OUTPUT ====================================================================
-
-
-
-
-        // Draw Field
+        // Draw game field
         for (int x = 0; x < nFieldWidth; x++)
             for (int y = 0; y < nFieldHeight; y++)
                 screen[(y + OFFSET) * nScreenWidth + (x + OFFSET)] = L" ABCDEFG=#"[pField[y * nFieldWidth + x]];
         
 
+        // Draw tetromino
+        for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
+            for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
+                if (tetromino[nCurrentPiece][rotate(px, py, nCurrentRotation)] == L'X')
+                    screen[(nCurrentY + py + OFFSET) * nScreenWidth + (nCurrentX + px + OFFSET)] = L"ABCDEFG"[nCurrentPiece];
 
 
-        WriteConsoleOutputCharacter(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);              // Display Frame
+        // Flush the buffer to the screen
+        WriteConsoleOutputCharacterW(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);              
     }
-
 
     return 0;
 }
@@ -74,10 +147,10 @@ int rotate(int px, int py, int r)
 {
     switch (r % 4)
     {
-    case 0: return (4 * py) + px;       // 0° or 360° state
-    case 1: return 12 + py - (4 * px);  // 90°  state
-    case 2: return 15 - (4 * py) - px;  // 180° state
-    case 3: return 3 - py + (4 * px);   // 270° state
+    case 0: return (MAX_TETROMINO_SPACE * py) + px;       // 0° or 360° state
+    case 1: return 12 + py - (MAX_TETROMINO_SPACE * px);  // 90°  state
+    case 2: return 15 - (MAX_TETROMINO_SPACE * py) - px;  // 180° state
+    case 3: return 3 - py + (MAX_TETROMINO_SPACE * px);   // 270° state
     }
     return 0;
 }
