@@ -1,6 +1,8 @@
 //TODO: CHECK IF THE WAY WE LOOP (INTERNAL Y AND EXTERNAL X) IS UNOPTIMIZED BECAUSE OF SPATIAL LOCALITY ON THE CPU CACHE.
 #include <Windows.h>
 #include <iostream>
+#include <cstdlib>
+#include <vector>
 #include <thread>
 #include <chrono>
 #include <string>
@@ -8,6 +10,7 @@
 
 #define BORDER 9
 #define EMPTY  0
+#define LINER  8
 #define OFFSET 2
 #define MAX_TETROMINO_SPACE 4
 #define NUM_INPUT_KEYS 4
@@ -59,6 +62,11 @@ int main()
     int nCurrentY        = 0;                       // Top of the field
     int nSpeed           = 20;                      // Game speed difficulty
     int nSpeedCounter    = 0;                       // If it reaches nSpeed, piece go down
+    int nScore           = 0;
+    int nPieceCount      = 0;
+
+    std::vector<int> vLines;                        // Stores lines that will disappear 
+
 
     // GAME LOOP ============================================================================
     while (!bGameOver)
@@ -95,6 +103,7 @@ int main()
         else
             bRotateHold = false;
 
+
         // Make piece fall if timer says so
         if (bForceDown)
         {
@@ -106,13 +115,46 @@ int main()
                 nCurrentY += MOVE_VEL;
             else
             {
-                // Make Piece stuck on the ground and generate another piece
+                // Lock the current piece
                 for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
                     for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
                         if (tetromino[nCurrentPiece][rotate(px, py, nCurrentRotation)] == L'X')
-                            screen[(nCurrentY + py + OFFSET) * nScreenWidth + (nCurrentX + px + OFFSET)] = L"ABCDEFG"[nCurrentPiece];
-                    
-                rotate(nCurrentX, nCurrentY, nCurrentRotation);
+                            pField[(nCurrentY + py) * nFieldWidth + (nCurrentX + px)] = nCurrentPiece + 1; // This assignment makes sense if you take a look at "// Draw game field"
+                
+                nPieceCount++;
+                if (nPieceCount % 10 == 0 && nPieceCount >= 10) nSpeed--;
+
+                // Check if we made a line
+                for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
+                {
+                    if (nCurrentY + py < nFieldHeight - 1)
+                    {
+                        bool bLine = true;
+                        for (int px = 1; px < nFieldWidth - 1 && bLine; px++)
+                            bLine &= ((pField[(nCurrentY + py) * nFieldWidth + px]) != 0);
+                        
+                        if (bLine)
+                        {
+                            for (int px = 1; px < nFieldWidth - 1; px++)
+                                pField[(nCurrentY + py) * nFieldWidth + px] = LINER;
+                            
+                            vLines.push_back(nCurrentY + py);
+                        }
+                    }
+
+                    nScore += 25;
+                    if (!vLines.empty()) nScore += (1 << vLines.size()) * 100;
+                }
+                
+
+                // Choose next piece
+                nCurrentX        = nFieldWidth / 2;    
+                nCurrentY        = 0;
+                nCurrentPiece    = std::rand() % 7;
+                nCurrentRotation = 0;
+
+                // Check if next piece fits (if not, game over)
+                bGameOver = !(doesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY));
             }
 
         }
@@ -125,17 +167,46 @@ int main()
             for (int y = 0; y < nFieldHeight; y++)
                 screen[(y + OFFSET) * nScreenWidth + (x + OFFSET)] = L" ABCDEFG=#"[pField[y * nFieldWidth + x]];
         
+        // Draw Score
+        swprintf_s(&screen[2 * nScreenWidth + nFieldWidth + 6], 16, L"SCORE: %8d", nScore);
+
 
         // Draw tetromino
         for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
             for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
                 if (tetromino[nCurrentPiece][rotate(px, py, nCurrentRotation)] == L'X')
                     screen[(nCurrentY + py + OFFSET) * nScreenWidth + (nCurrentX + px + OFFSET)] = L"ABCDEFG"[nCurrentPiece];
+        
+        // Draw pieces into new place after making a line
+        if (!vLines.empty())
+        {
+            WriteConsoleOutputCharacterW(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);
+            std::this_thread::sleep_for(std::chrono::milliseconds(400));
 
+            for (int &v : vLines)
+                for (int px = 1; px < nFieldWidth - 1; px++)
+                {
+                    for (int py = v; py > 0; py--)
+                        pField[(py * nFieldWidth) + px] = pField[(py - 1) * nFieldWidth + px];
+                    pField[px] = 0;
+                }
+
+            nScore += vLines.size() * 10;
+
+            vLines.clear();
+        }
 
         // Flush the buffer to the screen
         WriteConsoleOutputCharacterW(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);              
     }
+    // END OF GAME LOOP =====================================================================
+
+    // Half-life Scientist: "- Oh dear"
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    CloseHandle(hConsole);
+    std::cout << "GAME OVER!! SCORE: " << nScore << std::endl;
+    system("pause");
 
     return 0;
 }
