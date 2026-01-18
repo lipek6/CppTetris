@@ -9,7 +9,7 @@
 
 #define MAX_TETROMINO_SPACE 4
 #define MAX_DELETABLE_LINES 4
-#define NUM_INPUT_KEYS 5
+#define NUM_INPUT_KEYS 7
 #define MOVE_VEL 1
 
 #define BORDER 9
@@ -26,6 +26,7 @@ const int nPausePosition     = 10 * nScreenWidth + nFieldWidth + 6;
 const int nTutorialPosition0 = 26 * nScreenWidth + nFieldWidth + 47;
 const int nTutorialPosition1 = nTutorialPosition0 + nScreenWidth;
 const int nTutorialPosition2 = nTutorialPosition0 + 2 * nScreenWidth;
+const int nTutorialPosition3 = nTutorialPosition0 + 3 * nScreenWidth;
 unsigned char* pField        = nullptr;
 
 std::wstring tetromino[7];
@@ -63,7 +64,7 @@ int main()
     bool bForceDown = false;                // Is nSpeedCounter == nSpeed ?
     bool bPaused = false;
 
-    int nCurrentPiece = 0;                  // Line by default
+    int nCurrentPiece = rand() % 7;                  // Line by default
     int nCurrentRotation = 0;               // 0° degrees rotation
     int nCurrentX = nFieldWidth / 2;        // Middle of the field
     int nCurrentY = 0;                      // Top of the field
@@ -87,7 +88,7 @@ int main()
 
         // INPUT ============================================================================
         for (int k = 0; k < NUM_INPUT_KEYS; k++)
-            bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)("\x27\x25\x28ZP"[k]))) != 0;      
+            bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)("\x27\x25\x28ZPRC"[k]))) != 0;      
 
 
 
@@ -112,6 +113,34 @@ int main()
 
         // P Key (pause)
         if (bKey[4]) bPaused = true;
+
+        // R key (restart) 
+        if (bKey[5]) 
+        {
+            bGameOver = false;                 
+            bRotateHold = false;               
+            bForceDown = false;                
+            bPaused = false;
+            nCurrentPiece = rand() % 7;          
+            nCurrentRotation = 0;               
+            nCurrentX = nFieldWidth / 2;        
+            nCurrentY = 0;                      
+            nSpeed = 20;                        
+            nSpeedCounter = 0;                  
+            nScore = 0;
+            nPieceCount = 0;
+            vLinesCount = 0;
+            
+            for (int y = 0; y < nFieldHeight - 1; y++)
+            {
+                const int nCurrentFieldY = y * nFieldWidth;
+                for (int x = 1; x < nFieldWidth - 1; x++)
+                    pField[nCurrentFieldY + x] = 0;
+            }
+
+            while ((0x8000 & GetAsyncKeyState((unsigned char)('R'))) != 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
 
         // Make piece fall if timer says so
         if (bForceDown)
@@ -232,7 +261,8 @@ int main()
         // Draw instructions
         swprintf_s(&screen[nTutorialPosition0], 10, L"P - Pause");
         swprintf_s(&screen[nTutorialPosition1], 11, L"Z - Rotate");
-        swprintf_s(&screen[nTutorialPosition2], 22, L"Move using the ARROWS");
+        swprintf_s(&screen[nTutorialPosition2], 12, L"R - Restart");
+        swprintf_s(&screen[nTutorialPosition3], 22, L"Move using the ARROWS");
 
         // Flush the buffer to the screen
         WriteConsoleOutputCharacterW(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);
