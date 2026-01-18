@@ -1,15 +1,15 @@
-//TODO: CHECK IF THE WAY WE LOOP (INTERNAL Y AND EXTERNAL X) IS UNOPTIMIZED BECAUSE OF SPATIAL LOCALITY ON THE CPU CACHE.
-#include <Windows.h>            // TODO: Check if we can shrink the amount of things we bring from this lib (and from the others too)
+ï»¿#define WIN32_LEAN_AND_MEAN             // Reduces the amount of things we bring from the monstous windows API
+#include <Windows.h>         
 #include <iostream>
 #include <cstdlib>
-#include <vector>
 #include <thread>
 #include <chrono>
 #include <string>
 
 
 #define MAX_TETROMINO_SPACE 4
-#define NUM_INPUT_KEYS 4
+#define MAX_DELETABLE_LINES 4
+#define NUM_INPUT_KEYS 5
 #define MOVE_VEL 1
 
 #define BORDER 9
@@ -17,11 +17,16 @@
 #define LINER  8
 #define OFFSET 2
 
-const int nFieldWidth = 12;
-const int nFieldHeight = 18;
-const int nScreenWidth = 80;
-const int nScreenHeight = 30;
-unsigned char* pField = nullptr;        // Dynamically allocated array of size nFieldWidth * nFieldHeight 
+const int nFieldWidth        = 12;
+const int nFieldHeight       = 18;
+const int nScreenWidth       = 80;
+const int nScreenHeight      = 30;
+const int nScorePosition     = 2 * nScreenWidth + nFieldWidth + 6;
+const int nPausePosition     = 10 * nScreenWidth + nFieldWidth + 6;
+const int nTutorialPosition0 = 26 * nScreenWidth + nFieldWidth + 47;
+const int nTutorialPosition1 = nTutorialPosition0 + nScreenWidth;
+const int nTutorialPosition2 = nTutorialPosition0 + 2 * nScreenWidth;
+unsigned char* pField        = nullptr;
 
 std::wstring tetromino[7];
 
@@ -30,7 +35,7 @@ void createAssets();
 void createField();
 int  rotate(int px, int py, int r);
 bool doesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY);
-
+void paused();
 
 
 
@@ -52,21 +57,22 @@ int main()
 
 
     // GAME LOGIC DATA ======================================================================
-    bool bGameOver = false;              // Playable state
-    bool bKey[NUM_INPUT_KEYS] = { false };            // Keys used to play the game
-    bool bRotateHold = false;              // Is the user holding down 'Z'?
-    bool bForceDown = false;              // Is nSpeedCounter == nSpeed ?
+    bool bGameOver = false;                 // Playable state
+    bool bKey[NUM_INPUT_KEYS] = { false };  // Keys used to play the game
+    bool bRotateHold = false;               // Is the user holding down 'Z'?
+    bool bForceDown = false;                // Is nSpeedCounter == nSpeed ?
+    bool bPaused = false;
 
-    int nCurrentPiece = 0;                       // Line by default
-    int nCurrentRotation = 0;                       // 0° degrees rotation
-    int nCurrentX = nFieldWidth / 2;         // Middle of the field
-    int nCurrentY = 0;                       // Top of the field
-    int nSpeed = 20;                      // Game speed difficulty
-    int nSpeedCounter = 0;                       // If it reaches nSpeed, piece go down
+    int nCurrentPiece = 0;                  // Line by default
+    int nCurrentRotation = 0;               // 0Â° degrees rotation
+    int nCurrentX = nFieldWidth / 2;        // Middle of the field
+    int nCurrentY = 0;                      // Top of the field
+    int nSpeed = 20;                        // Game speed difficulty
+    int nSpeedCounter = 0;                  // If it reaches nSpeed, piece go down
     int nScore = 0;
     int nPieceCount = 0;
-
-    std::vector<int> vLines;                        // Stores lines that will disappear 
+    int vLinesCount = 0;
+    int vLines[MAX_DELETABLE_LINES] = { 0 };// Stores lines that will disappear 
 
 
     // GAME LOOP ============================================================================
@@ -81,12 +87,12 @@ int main()
 
         // INPUT ============================================================================
         for (int k = 0; k < NUM_INPUT_KEYS; k++)
-            bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)("\x27\x25\x28Z"[k]))) != 0;
-        //RightLeftDownZ
+            bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)("\x27\x25\x28ZP"[k]))) != 0;      
 
 
-// GAME LOGIC =======================================================================       
-// Right Key 
+
+        // GAME LOGIC =======================================================================       
+        // Right Key 
         nCurrentX += (bKey[0] && doesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX + MOVE_VEL, nCurrentY)) ? MOVE_VEL : 0;
 
         // Left Key 
@@ -104,6 +110,8 @@ int main()
         else
             bRotateHold = false;
 
+        // P Key (pause)
+        if (bKey[4]) bPaused = true;
 
         // Make piece fall if timer says so
         if (bForceDown)
@@ -117,11 +125,13 @@ int main()
             else
             {
                 // Lock the current piece
-                for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
-                    for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
+                for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
+                {
+                    const int nCurrentTetrominoY = (nCurrentY + py) * nFieldWidth;
+                    for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
                         if (tetromino[nCurrentPiece][rotate(px, py, nCurrentRotation)] == L'X')
-                            pField[(nCurrentY + py) * nFieldWidth + (nCurrentX + px)] = nCurrentPiece + 1; // This assignment makes sense if you take a look at "// Draw game field"
-
+                            pField[nCurrentTetrominoY + (nCurrentX + px)] = nCurrentPiece + 1; // This assignment makes sense if you take a look at "// Draw game field"
+                }
                 nPieceCount++;
                 if (nPieceCount % 10 == 0 && nPieceCount >= 10) nSpeed--;
 
@@ -130,26 +140,28 @@ int main()
                 {
                     if (nCurrentY + py < nFieldHeight - 1)
                     {
+                        const int nCurrentTetrominoY = (nCurrentY + py) * nFieldWidth;
                         bool bLine = true;
                         for (int px = 1; px < nFieldWidth - 1 && bLine; px++)
-                            bLine &= ((pField[(nCurrentY + py) * nFieldWidth + px]) != 0);
+                            bLine &= ((pField[nCurrentTetrominoY + px]) != 0);
 
                         if (bLine)
                         {
                             for (int px = 1; px < nFieldWidth - 1; px++)
-                                pField[(nCurrentY + py) * nFieldWidth + px] = LINER;
+                                pField[nCurrentTetrominoY + px] = LINER;
 
-                            vLines.push_back(nCurrentY + py);
+                            vLines[vLinesCount] = nCurrentY + py;
+                            vLinesCount++;
                         }
                     }
 
                     nScore += 25;
-                    if (!vLines.empty()) nScore += (1 << vLines.size()) * 100;
+                    if (vLinesCount != 0) nScore += (1 << vLinesCount) * 100;
                 }
 
 
                 // Choose next piece
-                nCurrentX = nFieldWidth / 2;
+                nCurrentX = nFieldWidth / 2;        //TODO
                 nCurrentY = 0;
                 nCurrentPiece = std::rand() % 7;
                 nCurrentRotation = 0;
@@ -164,38 +176,63 @@ int main()
 
         // RENDER OUTPUT ====================================================================
         // Draw game field
-        for (int x = 0; x < nFieldWidth; x++)
-            for (int y = 0; y < nFieldHeight; y++)
-                screen[(y + OFFSET) * nScreenWidth + (x + OFFSET)] = L" ABCDEFG=#"[pField[y * nFieldWidth + x]];
+        for (int y = 0; y < nFieldHeight; y++)
+        {
+            const int nCurrentScreenY = (y + OFFSET) * nScreenWidth;
+            const int nCurrentFieldY  = y * nFieldWidth;
+            for (int x = 0; x < nFieldWidth; x++)
+                screen[nCurrentScreenY + (x + OFFSET)] = L" ABCDEFG=#"[pField[nCurrentFieldY + x]];
+        }
 
         // Draw Score
-        swprintf_s(&screen[2 * nScreenWidth + nFieldWidth + 6], 16, L"SCORE: %8d", nScore);
+        swprintf_s(&screen[nScorePosition], 16, L"SCORE: %8d", nScore);
 
 
         // Draw tetromino
-        for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
-            for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
+        for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
+        {
+            const int nCurrentScreenY = (nCurrentY + py + OFFSET) * nScreenWidth;
+            const int nCurrentFieldY = py * nFieldWidth;
+            for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
                 if (tetromino[nCurrentPiece][rotate(px, py, nCurrentRotation)] == L'X')
-                    screen[(nCurrentY + py + OFFSET) * nScreenWidth + (nCurrentX + px + OFFSET)] = L"ABCDEFG"[nCurrentPiece];
+                    screen[nCurrentScreenY + (nCurrentX + px + OFFSET)] = L"ABCDEFG"[nCurrentPiece];
+
+        }
+
+        // Pause the game
+        if (bPaused)
+        {
+            swprintf_s(&screen[nPausePosition], 34, L"GAME PAUSED (press P to continue)");
+            WriteConsoleOutputCharacterW(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);
+            paused();
+            bPaused = false;
+            swprintf_s(&screen[nPausePosition], 34, L"                                 ");
+        }
+
 
         // Draw pieces into new place after making a line
-        if (!vLines.empty())
+        if (vLinesCount)
         {
             WriteConsoleOutputCharacterW(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);
             std::this_thread::sleep_for(std::chrono::milliseconds(400));
 
-            for (int& v : vLines)
+            for (int v = 0; v < vLinesCount; v++)
                 for (int px = 1; px < nFieldWidth - 1; px++)
                 {
-                    for (int py = v; py > 0; py--)
+                    for (int py = vLines[v]; py > 0; py--)
                         pField[(py * nFieldWidth) + px] = pField[(py - 1) * nFieldWidth + px];
                     pField[px] = 0;
                 }
 
-            nScore += vLines.size() * 10;
+            nScore += vLinesCount * 10;
 
-            vLines.clear();
+            vLinesCount = 0;
         }
+
+        // Draw instructions
+        swprintf_s(&screen[nTutorialPosition0], 10, L"P - Pause");
+        swprintf_s(&screen[nTutorialPosition1], 11, L"Z - Rotate");
+        swprintf_s(&screen[nTutorialPosition2], 22, L"Move using the ARROWS");
 
         // Flush the buffer to the screen
         WriteConsoleOutputCharacterW(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);
@@ -207,8 +244,15 @@ int main()
 
     CloseHandle(hConsole);
     std::cout << "GAME OVER!! SCORE: " << nScore << std::endl;
-    system("pause");
 
+    while (bKey[0] || bKey[1] || bKey[2] || bKey[3] || bKey[4])
+    {
+        for (int k = 0; k < NUM_INPUT_KEYS; k++)
+            bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)("\x27\x25\x28ZP"[k]))) != 0;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+
+    system("pause");
     return 0;
 }
 
@@ -219,10 +263,10 @@ int rotate(int px, int py, int r)
 {
     switch (r % 4)
     {
-    case 0: return (MAX_TETROMINO_SPACE * py) + px;       // 0° or 360° state
-    case 1: return 12 + py - (MAX_TETROMINO_SPACE * px);  // 90°  state
-    case 2: return 15 - (MAX_TETROMINO_SPACE * py) - px;  // 180° state
-    case 3: return 3 - py + (MAX_TETROMINO_SPACE * px);   // 270° state
+    case 0: return (MAX_TETROMINO_SPACE * py) + px;       // 0Â° or 360Â° state
+    case 1: return 12 + py - (MAX_TETROMINO_SPACE * px);  // 90Â°  state
+    case 2: return 15 - (MAX_TETROMINO_SPACE * py) - px;  // 180Â° state
+    case 3: return 3 - py + (MAX_TETROMINO_SPACE * px);   // 270Â° state
     }
     return 0;
 }
@@ -318,3 +362,30 @@ bool doesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY)
 
     return true;
 }
+
+
+
+// Holds the game frozen while P is not pressed again
+void paused()
+{
+    // Wait for user to release the P key
+    while ((0x8000 & GetAsyncKeyState((unsigned char)('P'))) != 0)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    
+
+    //Check for P presses to Unpause the game
+    bool bPauseKey = false;
+    while (!bPauseKey)
+    {
+        bPauseKey = (0x8000 & GetAsyncKeyState((unsigned char)('P'))) != 0;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+
+    // Wait for user to release the P key
+    while ((0x8000 & GetAsyncKeyState((unsigned char)('P'))) != 0)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+
+
