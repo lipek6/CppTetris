@@ -214,7 +214,7 @@ int main()
 
 
 
-//  Rotates a piece by calculating where each tile is mapped in the given rotation.
+
 int rotate(int px, int py, int r)
 {
     switch (r % 4)
@@ -227,11 +227,8 @@ int rotate(int px, int py, int r)
     return 0;
 }
 
-
-
-// Creates all the 7 tetromino pieces assets used in the game. All tetrominos are 4x4.
 void createAssets()
-{   
+{
     tetromino[0] = (L"..X...X...X...X.");
     // ..X.
     // ..X.
@@ -275,42 +272,32 @@ void createAssets()
     // ....
 }
 
-
-
-// It populates the pField object with numbers representing walls or empty spaces that are written on the screen HANDLE as characters.
 void createField()
 {
     pField = new unsigned char[nFieldWidth * nFieldHeight];
 
-    for (int y = 0; y < nFieldHeight; y++)
-    {
-        const int nCurrentY = y * nFieldWidth;
-        for (int x = 0; x < nFieldWidth; x++)
-            pField[nCurrentY + x] = (x == 0 || x == nFieldWidth - 1 || y == nFieldHeight - 1) ? BORDER : EMPTY;
-    }
+    for (int x = 0; x < nFieldWidth; x++)
+        for (int y = 0; y < nFieldHeight; y++)
+            pField[y * nFieldWidth + x] = (x == 0 || x == nFieldWidth - 1 || y == nFieldHeight - 1) ? BORDER : EMPTY;
 }
 
-
-
-// Checks if a given piece, at a given rotation state, fits on the given location.
+//                Id              State          Top X      Top Y
 bool doesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY)
 {
-    for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
+    for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
     {
-        const int nCurrentY = (nPosY + py) * nFieldWidth;
-        for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
+        for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
         {
-            const int nCurrentX = nPosX + px;
-
             int pieceIndex = rotate(px, py, nRotation);
-            int fieldIndex = nCurrentY + nCurrentX;
+            int fieldIndex = (nPosY + py) * nFieldWidth + (nPosX + px);
 
             // COLLISION DETECTION ===========================================================
 
-            if (nCurrentX >= 0 && nCurrentX < nFieldWidth)
+            if (nPosX + px >= 0 && nPosX + px < nFieldWidth)
                 if (nPosY + py >= 0 && nPosY + py < nFieldHeight)
                     if (tetromino[nTetromino][pieceIndex] == L'X' && pField[fieldIndex] != 0)
                         return false;
+
 
             // COLLISION DETECTION ===========================================================
         }
