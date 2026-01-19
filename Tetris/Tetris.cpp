@@ -16,24 +16,34 @@
 #define EMPTY  0
 #define LINER  8
 #define OFFSET 2
+#define HOLDER_OFFSET_X 18
+#define HOLDER_OFFSET_Y 14
 
-const int nFieldWidth        = 12;
-const int nFieldHeight       = 18;
 const int nScreenWidth       = 80;
 const int nScreenHeight      = 30;
-const int nScorePosition     = 2 * nScreenWidth + nFieldWidth + 6;
+const int nFieldWidth        = 12;
+const int nFieldHeight       = 18;
+const int nHolderWidth       = 6;                                   
+const int nHolderHeight      = 6;                                   
+const int nScorePosition     = 2  * nScreenWidth + nFieldWidth + 6;
 const int nPausePosition     = 10 * nScreenWidth + nFieldWidth + 6;
-const int nTutorialPosition0 = 26 * nScreenWidth + nFieldWidth + 47;
+const int nTutorialPosition0 = 25 * nScreenWidth + nFieldWidth + 47;
 const int nTutorialPosition1 = nTutorialPosition0 + nScreenWidth;
 const int nTutorialPosition2 = nTutorialPosition0 + 2 * nScreenWidth;
 const int nTutorialPosition3 = nTutorialPosition0 + 3 * nScreenWidth;
-unsigned char* pField        = nullptr;
+const int nTutorialPosition4 = nTutorialPosition0 + 4 * nScreenWidth;
+
+unsigned char *pField       = nullptr;
+unsigned char *pHolder      = nullptr;
+const wchar_t *CHAR_MAP     = L" ABCDEFG=#";
+const char    *KEY_MAPPINGS = "\x27\x25\x28ZPRC";
 
 std::wstring tetromino[7];
 
 
 void createAssets();
 void createField();
+void createHolder();
 int  rotate(int px, int py, int r);
 bool doesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY);
 void paused();
@@ -44,6 +54,7 @@ int main()
 {
     // GAME ASSETS INITIALIZATION ===========================================================
     createAssets();
+    createHolder();
     createField();
 
 
@@ -60,11 +71,13 @@ int main()
     // GAME LOGIC DATA ======================================================================
     bool bGameOver = false;                 // Playable state
     bool bKey[NUM_INPUT_KEYS] = { false };  // Keys used to play the game
-    bool bRotateHold = false;               // Is the user holding down 'Z'?
+    bool bRotateKeyHold = false;            // Is the user holding down 'Z'?
     bool bForceDown = false;                // Is nSpeedCounter == nSpeed ?
     bool bPaused = false;
+    bool bHolderKeyHold = false;
+    bool bHolding = false;
 
-    int nCurrentPiece = rand() % 7;                  // Line by default
+    int nCurrentPiece = rand() % 7;         // Piece that will start at the top
     int nCurrentRotation = 0;               // 0° degrees rotation
     int nCurrentX = nFieldWidth / 2;        // Middle of the field
     int nCurrentY = 0;                      // Top of the field
@@ -74,7 +87,7 @@ int main()
     int nPieceCount = 0;
     int vLinesCount = 0;
     int vLines[MAX_DELETABLE_LINES] = { 0 };// Stores lines that will disappear 
-
+    int nHoldedPiece = 0;
 
     // GAME LOOP ============================================================================
     while (!bGameOver)
@@ -88,7 +101,7 @@ int main()
 
         // INPUT ============================================================================
         for (int k = 0; k < NUM_INPUT_KEYS; k++)
-            bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)("\x27\x25\x28ZPRC"[k]))) != 0;      
+            bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)(KEY_MAPPINGS[k]))) != 0;
 
 
 
@@ -105,11 +118,11 @@ int main()
         // Z Key (rotate)
         if (bKey[3])
         {
-            nCurrentRotation += (!bRotateHold && doesPieceFit(nCurrentPiece, nCurrentRotation + 1, nCurrentX, nCurrentY)) ? 1 : 0;
-            bRotateHold = true;
+            nCurrentRotation += (!bRotateKeyHold && doesPieceFit(nCurrentPiece, nCurrentRotation + 1, nCurrentX, nCurrentY)) ? 1 : 0;
+            bRotateKeyHold = true;
         }
         else
-            bRotateHold = false;
+            bRotateKeyHold = false;
 
         // P Key (pause)
         if (bKey[4]) bPaused = true;
@@ -118,7 +131,7 @@ int main()
         if (bKey[5]) 
         {
             bGameOver = false;                 
-            bRotateHold = false;               
+            bRotateKeyHold = false;               
             bForceDown = false;                
             bPaused = false;
             nCurrentPiece = rand() % 7;          
@@ -130,7 +143,10 @@ int main()
             nScore = 0;
             nPieceCount = 0;
             vLinesCount = 0;
-            
+            nHoldedPiece = 0;
+            bHolding = false;
+            bHolderKeyHold = false;
+
             for (int y = 0; y < nFieldHeight - 1; y++)
             {
                 const int nCurrentFieldY = y * nFieldWidth;
@@ -141,6 +157,33 @@ int main()
             while ((0x8000 & GetAsyncKeyState((unsigned char)('R'))) != 0)
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
+
+        // C Key (Hold piece / Use holded piece)
+        if (bKey[6])
+        {
+            if (!bHolderKeyHold)
+            {
+                if (bHolding)                                     // Holding a piece
+                {
+                    std::swap(nCurrentPiece, nHoldedPiece);
+                    nCurrentRotation = 0;
+                    nCurrentX = nFieldWidth / 2;
+                    nCurrentY = 0;
+                }
+                else                                               // Empty Holder (initial state only)
+                {
+                    bHolding = true;
+                    nHoldedPiece = nCurrentPiece;
+                    nCurrentPiece = rand() % 7;
+                    nCurrentRotation = 0;
+                    nCurrentX = nFieldWidth / 2;
+                    nCurrentY = 0;
+                }
+            }
+            bHolderKeyHold = true;
+        }
+        else
+            bHolderKeyHold = false;
 
         // Make piece fall if timer says so
         if (bForceDown)
@@ -210,12 +253,36 @@ int main()
             const int nCurrentScreenY = (y + OFFSET) * nScreenWidth;
             const int nCurrentFieldY  = y * nFieldWidth;
             for (int x = 0; x < nFieldWidth; x++)
-                screen[nCurrentScreenY + (x + OFFSET)] = L" ABCDEFG=#"[pField[nCurrentFieldY + x]];
+                screen[nCurrentScreenY + (x + OFFSET)] = CHAR_MAP[pField[nCurrentFieldY + x]];
         }
 
         // Draw Score
         swprintf_s(&screen[nScorePosition], 16, L"SCORE: %8d", nScore);
 
+
+        // Draw holding field 
+        for (int y = 0; y < nHolderHeight; y++)
+        {
+            const int nCurrentScreenY = (y + HOLDER_OFFSET_Y) * nScreenWidth;
+            const int nCurrentHolderY = y * nHolderWidth;
+            for (int x = 0; x < nHolderWidth; x++)
+                screen[nCurrentScreenY + (x + HOLDER_OFFSET_X)] = CHAR_MAP[pHolder[nCurrentHolderY + x]];
+        }
+
+        // Draw Holded Piece
+        if (bHolding)
+        {
+            for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
+            {
+                const int nScreenY = (py + HOLDER_OFFSET_Y + 1) * nScreenWidth;
+                for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
+                {
+                    if (tetromino[nHoldedPiece][rotate(px, py, 0)] == L'X')
+                        screen[nScreenY + (px + HOLDER_OFFSET_X + 1)] = L"ABCDEFG"[nHoldedPiece];
+                }
+            }
+        }
+       
 
         // Draw tetromino
         for (int py = 0; py < MAX_TETROMINO_SPACE; py++)
@@ -225,7 +292,6 @@ int main()
             for (int px = 0; px < MAX_TETROMINO_SPACE; px++)
                 if (tetromino[nCurrentPiece][rotate(px, py, nCurrentRotation)] == L'X')
                     screen[nCurrentScreenY + (nCurrentX + px + OFFSET)] = L"ABCDEFG"[nCurrentPiece];
-
         }
 
         // Pause the game
@@ -259,10 +325,11 @@ int main()
         }
 
         // Draw instructions
-        swprintf_s(&screen[nTutorialPosition0], 10, L"P - Pause");
-        swprintf_s(&screen[nTutorialPosition1], 11, L"Z - Rotate");
-        swprintf_s(&screen[nTutorialPosition2], 12, L"R - Restart");
-        swprintf_s(&screen[nTutorialPosition3], 22, L"Move using the ARROWS");
+        swprintf_s(&screen[nTutorialPosition0], 9,  L"C - Hold");
+        swprintf_s(&screen[nTutorialPosition1], 10, L"P - Pause");
+        swprintf_s(&screen[nTutorialPosition2], 11, L"Z - Rotate");
+        swprintf_s(&screen[nTutorialPosition3], 12, L"R - Restart");
+        swprintf_s(&screen[nTutorialPosition4], 22, L"Move using the ARROWS");
 
         // Flush the buffer to the screen
         WriteConsoleOutputCharacterW(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);
@@ -278,7 +345,7 @@ int main()
     while (bKey[0] || bKey[1] || bKey[2] || bKey[3] || bKey[4])
     {
         for (int k = 0; k < NUM_INPUT_KEYS; k++)
-            bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)("\x27\x25\x28ZP"[k]))) != 0;
+            bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)(KEY_MAPPINGS[k]))) != 0;
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
@@ -361,6 +428,21 @@ void createField()
         const int nCurrentY = y * nFieldWidth;
         for (int x = 0; x < nFieldWidth; x++)
             pField[nCurrentY + x] = (x == 0 || x == nFieldWidth - 1 || y == nFieldHeight - 1) ? BORDER : EMPTY;
+    }
+}
+
+
+
+// It populates the pHolder object with numbers representing walls or empty spaces that are written on the screen HANDLE as characters.
+void createHolder()
+{ 
+    pHolder = new unsigned char[nHolderWidth * nHolderHeight];
+
+    for (int y = 0; y < nHolderHeight; y++)
+    {
+        const int nCurrentY = y * nHolderWidth;
+        for (int x = 0; x < nHolderWidth; x++)
+            pHolder[nCurrentY + x] = (x == 0 || x == nHolderWidth - 1 || y == 0 || y == nHolderHeight - 1) ? BORDER : EMPTY;
     }
 }
 
