@@ -75,7 +75,8 @@ int main()
     bool bForceDown = false;                // Is nSpeedCounter == nSpeed ?
     bool bPaused = false;
     bool bHolderKeyHold = false;
-    bool bHolding = false;
+    bool bHolding = false;                  
+    bool bCanHoldNow = true;                // Not allowed to hold and unhold until one piece is fixed
 
     int nCurrentPiece = rand() % 7;         // Piece that will start at the top
     int nCurrentRotation = 0;               // 0° degrees rotation
@@ -159,7 +160,7 @@ int main()
         }
 
         // C Key (Hold piece / Use holded piece)
-        if (bKey[6])
+        if (bKey[6] && bCanHoldNow)
         {
             if (!bHolderKeyHold)
             {
@@ -181,6 +182,7 @@ int main()
                 }
             }
             bHolderKeyHold = true;
+            bCanHoldNow    = false;
         }
         else
             bHolderKeyHold = false;
@@ -229,6 +231,8 @@ int main()
 
                     nScore += 25;
                     if (vLinesCount != 0) nScore += (1 << vLinesCount) * 100;
+                    
+                    bCanHoldNow = true;
                 }
 
 
@@ -498,6 +502,3 @@ void paused()
     while ((0x8000 & GetAsyncKeyState((unsigned char)('P'))) != 0)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 }
-
-
-
